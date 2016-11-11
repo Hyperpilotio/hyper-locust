@@ -56,6 +56,7 @@ def parse_options():
 
     parser.add_option(
         '--consumer',
+        action='store_true',
         dest='consumer',
         default=False,
         help="Set Locust to run in connecting consumer server mode"
@@ -467,7 +468,6 @@ def main():
         """
         Shut down locust by firing quitting event, printing stats and exiting
         """
-        global options
         if options.consumer:
             res, err = runners.locust_runner.commit()
             if err:
