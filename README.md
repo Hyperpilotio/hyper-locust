@@ -1,5 +1,15 @@
 # Locust
 
+Customized for Hyperpilot
+
+## Quick start
+
+docker run -e LOCUST_MODE=consumer-single -e CONSUMER_HOST=http://hostname:port -e TARGET_HOST=hostname:port -e CLIENTS=3 -e REQUESTS=100 wen777/load-testing
+
+## Build
+
+docker build -t wen777:load-testing .
+
 [![Build Status](https://secure.travis-ci.org/locustio/locust.png)](http://travis-ci.org/locustio/locust)
 [![Gitter Chat](https://badges.gitter.im/locustio/locust.png)](https://gitter.im/locustio/locust)
 
