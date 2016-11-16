@@ -6,6 +6,7 @@ import random
 import logging
 import requests
 import json
+from influxdb import InfluxDBClient
 from time import time, mktime
 from hashlib import md5
 from datetime import datetime
@@ -213,8 +214,12 @@ class LocalLocustRunner(LocustRunner):
 class LocalLocustConsumerRunner(LocustRunner):
     def __init__(self, locust_classes, options):
         super(LocalLocustConsumerRunner, self).__init__(locust_classes, options)
-        self.consumer_host = options.consumer_host
-        self.uuid = ''
+        self.consumer_influx_endpoint = options.consumer_influx_endpoint
+        self.uuid = options.consumer_run_id
+        endpoint_parts = options.consumer_influx_endpoint.split(":")
+        self.influx_client = InfluxDBClient(
+            endpoint_parts[0], int(endpoint_parts[1]), options.consumer_influx_user, options.consumer_influx_password, options.consumer_influx_db)
+        # TODO(tnachen): Check all options are set!
 
         # register listener thats logs the exception for the local runner
         def on_locust_error(locust_instance, exception, tb):
@@ -222,38 +227,8 @@ class LocalLocustConsumerRunner(LocustRunner):
             self.log_exception("local", str(exception), formatted_tb)
         events.locust_error += on_locust_error
 
-        self.notify()
-
-    # Notify Consumer server that load testing starts
-    def notify(self):
-        payload = {
-            'startedAt': int(mktime(datetime.now().timetuple())),
-            'hostname': socket.gethostname(),
-            'targetHost': self.host,
-            'tags': {
-                'mode': 'single',
-                'hostname': self.host,
-            },
-            'measurement': {
-                'fields': {
-                    'clients': self.num_clients,
-                    'hatchRate': self.hatch_rate,
-                    'requests': self.num_requests
-                }
-            },
-            'state': self.state
-        }
-        r = requests.post(url=self.consumer_host + '/apiv0.1/events/register', json=payload)
-        ## based on the result of previous request, set the value of self.uuid
-        if r.status_code == 200:
-            res = r.json()
-            self.uuid = res['data']['uuid']
-
     # Commit the result of load testing
     def commit(self):
-        if not self.uuid:
-            return 'Haven\'t initialized.', True
-
         payload = {
             'startedAt': int(mktime(datetime.now().timetuple())),
             'hostname': socket.gethostname(),
@@ -271,8 +246,7 @@ class LocalLocustConsumerRunner(LocustRunner):
             'uuid': self.uuid,
             'state': self.state
         }
-        r = requests.post(url=self.consumer_host + '/apiv0.1/events/commit', json=payload)
-        return r.text, r.status_code != 200
+        self.write_points(payload)
 
     def start_hatching(self, locust_count=None, hatch_rate=None, wait=False):
         self.hatching_greenlet = gevent.spawn(lambda: super(LocalLocustConsumerRunner, self).start_hatching(locust_count, hatch_rate, wait=wait))
