@@ -63,13 +63,50 @@ def parse_options():
     )
 
     parser.add_option(
-        '--consumer-host',
-        dest="consumer_host",
+        '--consumer-run-id',
         action='store',
         type="str",
-        default='http://127.0.0.1',
-        help="Address of consumer server"
+        dest='consumer_run_id',
+        default='',
+        help="The unique run id to log to consumer"
     )
+
+    parser.add_option(
+        '--consumer-influx-endpoint',
+        dest="consumer_influx_endpoint",
+        action='store',
+        type="str",
+        default='127.0.0.1:8086',
+        help="Address of inlfux DB to write metrics to"
+    )
+
+    parser.add_option(
+        '--consumer-influx-user',
+        dest="consumer_influx_user",
+        action='store',
+        type="str",
+        default='root',
+        help="User name to connect with influx"
+    )
+
+    parser.add_option(
+        '--consumer-influx-password',
+        dest="consumer_influx_password",
+        action='store',
+        type="str",
+        default='root',
+        help="Password to connect with influx"
+    )
+
+    parser.add_option(
+        '--consumer-influx-db',
+        dest="consumer_influx_db",
+        action='store',
+        type="str",
+        default='test',
+        help="Database to store results with influx"
+    )
+
     parser.add_option(
         '-f', '--locustfile',
         dest='locustfile',
@@ -469,11 +506,8 @@ def main():
         Shut down locust by firing quitting event, printing stats and exiting
         """
         if options.consumer:
-            res, err = runners.locust_runner.commit()
-            if err:
-                logger.error(msg="Commit the work failed.\n%s\n" % res)
-            else:
-                logger.info(msg="Successfully commit the work of load testing.\n")
+            runners.locust_runner.commit()
+
         logger.info("Shutting down (exit code %s), bye." % code)
 
         events.quitting.fire()
