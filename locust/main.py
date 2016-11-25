@@ -15,7 +15,7 @@ from .log import setup_logging, console_logger
 from .stats import stats_printer, print_percentile_stats, print_error_report, print_stats
 from .inspectlocust import print_task_ratio, get_task_ratio_dict
 from .core import Locust, HttpLocust
-from .runners import MasterLocustRunner, SlaveLocustRunner, LocalLocustRunner, LocalLocustConsumerRunner
+from .runners import MasterLocustRunner, MasterLocustConsumerRunner, SlaveLocustRunner, LocalLocustRunner
 from . import events
 
 _internals = [Locust, HttpLocust]
@@ -465,17 +465,16 @@ def main():
         main_greenlet = gevent.spawn(web.start, locust_classes, options)
 
     if not options.master and not options.slave:
-        # Register a load testing event to consumer server.
-        if options.consumer:
-            runners.locust_runner = LocalLocustConsumerRunner(locust_classes, options)
-        else:
-            runners.locust_runner = LocalLocustRunner(locust_classes, options)
+        runners.locust_runner = LocalLocustRunner(locust_classes, options)
         # spawn client spawning/hatching greenlet
         if options.no_web:
             runners.locust_runner.start_hatching(wait=True)
             main_greenlet = runners.locust_runner.greenlet
     elif options.master:
-        runners.locust_runner = MasterLocustRunner(locust_classes, options)
+        if options.consumer:
+            runners.locust_runner = MasterLocustConsumerRunner(locust_classes, options)
+        else:
+            runners.locust_runner = MasterLocustRunner(locust_classes, options)
     elif options.slave:
         try:
             runners.locust_runner = SlaveLocustRunner(locust_classes, options)
