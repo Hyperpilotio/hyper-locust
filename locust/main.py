@@ -15,7 +15,7 @@ from .log import setup_logging, console_logger
 from .stats import stats_printer, print_percentile_stats, print_error_report, print_stats
 from .inspectlocust import print_task_ratio, get_task_ratio_dict
 from .core import Locust, HttpLocust
-from .runners import MasterLocustRunner, MasterLocustConsumerRunner, SlaveLocustRunner, LocalLocustRunner
+from .runners import MasterLocustRunner, SlaveLocustRunner, LocalLocustRunner
 from . import events
 
 _internals = [Locust, HttpLocust]
@@ -59,15 +59,6 @@ def parse_options():
         dest='consumer',
         default=False,
         help="Set Locust to run in connecting consumer server mode"
-    )
-
-    parser.add_option(
-        '--consumer-run-id',
-        action='store',
-        type="str",
-        dest='consumer_run_id',
-        default='',
-        help="The unique run id to log to consumer"
     )
 
     parser.add_option(
@@ -454,6 +445,14 @@ def main():
         console_logger.info(dumps(task_data))
         sys.exit(0)
 
+    if options.consumer:
+        if not options.consumer_influx_endpoint:
+            logger.error("Influx endpoint is required for consumer")
+            sys.exit(0)
+        if not options.consumer_influx_db:
+            logger.error("Influx database name is required for consumer")
+            sys.exit(0)
+
     # if --master is set, make sure --no-web isn't set
     if options.master and options.no_web:
         logger.error("Locust can not run distributed with the web interface disabled (do not use --no-web and --master together)")
@@ -471,10 +470,7 @@ def main():
             runners.locust_runner.start_hatching(wait=True)
             main_greenlet = runners.locust_runner.greenlet
     elif options.master:
-        if options.consumer:
-            runners.locust_runner = MasterLocustConsumerRunner(locust_classes, options)
-        else:
-            runners.locust_runner = MasterLocustRunner(locust_classes, options)
+        runners.locust_runner = MasterLocustRunner(locust_classes, options)
     elif options.slave:
         try:
             runners.locust_runner = SlaveLocustRunner(locust_classes, options)
@@ -490,9 +486,6 @@ def main():
         """
         Shut down locust by firing quitting event, printing stats and exiting
         """
-        if options.consumer:
-            runners.locust_runner.commit()
-
         logger.info("Shutting down (exit code %s), bye." % code)
 
         events.quitting.fire()
