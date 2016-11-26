@@ -6,7 +6,9 @@ import random
 import logging
 import requests
 import json
+import uuid
 from influxdb import InfluxDBClient
+from influxdb.client import InfluxDBClientError
 from time import time, mktime
 from hashlib import md5
 from datetime import datetime
@@ -230,8 +232,8 @@ class SlaveNode(object):
         self.user_count = 0
 
 class MasterLocustRunner(DistributedLocustRunner):
-    def __init__(self, *args, **kwargs):
-        super(MasterLocustRunner, self).__init__(*args, **kwargs)
+    def __init__(self, locust_classes, options):
+        super(MasterLocustRunner, self).__init__(locust_classes, options)
 
         class SlaveNodesDict(dict):
             def get_by_state(self, state):
@@ -253,6 +255,8 @@ class MasterLocustRunner(DistributedLocustRunner):
         self.server = rpc.Server(self.master_bind_host, self.master_bind_port)
         self.greenlet = Group()
         self.greenlet.spawn(self.client_listener).link_exception(callback=self.noop)
+        if options.consumer:
+            self.consumer = InfluxStatsWriter(self, options)
 
         # listener that gathers info on how many locust users the slaves has spawned
         def on_slave_report(client_id, data):
@@ -283,6 +287,7 @@ class MasterLocustRunner(DistributedLocustRunner):
         slave_num_clients = locust_count // (num_slaves or 1)
         slave_hatch_rate = float(hatch_rate) / (num_slaves or 1)
         remaining = locust_count % num_slaves
+        self.run_id = str(uuid.uuid4())
 
         logger.info("Sending hatch jobs to %d ready clients", num_slaves)
 
@@ -308,11 +313,13 @@ class MasterLocustRunner(DistributedLocustRunner):
 
         self.stats.start_time = time()
         self.state = STATE_HATCHING
+        return self.run_id
 
     def stop(self):
         for client in self.clients.hatching + self.clients.running:
             self.server.send(Message("stop", None, None))
         events.master_stop_hatching.fire()
+        self.run_id = None
 
     def quit(self):
         for client in six.itervalues(self.clients):
@@ -355,51 +362,53 @@ class MasterLocustRunner(DistributedLocustRunner):
     def slave_count(self):
         return len(self.clients.ready) + len(self.clients.hatching) + len(self.clients.running)
 
-class MasterLocustConsumerRunner(MasterLocustRunner):
-    def __init__(self, locust_classes, options):
-        super(LocalLocustConsumerRunner, self).__init__(locust_classes, options)
+class InfluxStatsWriter(object):
+    def __init__(self, master, options):
+        self.master = master
         self.consumer_influx_endpoint = options.consumer_influx_endpoint
-        self.uuid = options.consumer_run_id
         endpoint_parts = options.consumer_influx_endpoint.split(":")
         self.influx_client = InfluxDBClient(
             endpoint_parts[0], int(endpoint_parts[1]), options.consumer_influx_user, options.consumer_influx_password, options.consumer_influx_db)
-        # TODO(tnachen): Check all options are set!
+        try:
+            self.influx_client.create_database(options.consumer_influx_db)
+        except InfluxDBClientError:
+            pass #Ignore
 
-        # register listener thats logs the exception for the local runner
-        def on_locust_error(locust_instance, exception, tb):
-            formatted_tb = "".join(traceback.format_tb(tb))
-            self.log_exception("local", str(exception), formatted_tb)
-        events.locust_error += on_locust_error
+        events.master_stop_hatching += self.commit
+        events.quitting += self.commit
 
     # Commit the result of load testing
     def commit(self):
-        payload = {
-            'startedAt': int(mktime(datetime.now().timetuple())),
-            'hostname': socket.gethostname(),
-            'targetHost': self.host,
-            'user_count': self.user_count,
-            'tags': {
-                'mode': 'single',
-                'hostname': self.host,
-            },
-            'measurement': {
+        if not self.master.run_id:
+            return
+
+        stats_payloads = []
+        for s in self.request_stats_per_method(self.master):
+            stats_payloads.append({
+                'time': int(mktime(datetime.now().timetuple())),
+                'tags': {
+                    'hostname': self.master.host,
+                    'run_id': self.master.run_id,
+                },
+                'measurement': "locust_results",
                 'fields': {
-                    'requestStats': self.request_stats_dict()
+                    'requestStats': s
                 }
-            },
-            'uuid': self.uuid,
-            'state': self.state
-        }
-        self.influx_client.write_points(payload)
+            })
+        logger.info("Sending load results to influx for run: " + self.master.run_id)
+        try:
+            self.influx_client.write_points(stats_payloads)
+        except InfluxDBClientError as e:
+            logger.warning("Error writing to influx: " + str(e))
 
 
     def _sort_stats(self, stats):
         return [stats[key] for key in sorted(six.iterkeys(stats))]
 
-    def request_stats_dict(self):
+    def request_stats_per_method(self, master):
         stats = []
-        for s in chain(self._sort_stats(self.request_stats), [self.stats.aggregated_stats("Total")]):
-            stats.append({
+        for s in self._sort_stats(master.request_stats):
+            stat = {
                 "method": s.method,
                 "name": s.name,
                 "num_requests": s.num_requests,
@@ -410,12 +419,21 @@ class MasterLocustConsumerRunner(MasterLocustRunner):
                 "current_rps": s.current_rps,
                 "median_response_time": s.median_response_time,
                 "avg_content_length": s.avg_content_length,
-            })
+                "user_count": master.user_count
+            }
+            if s.num_requests:
+                percentile = s.percentile(tpl='"%s",%i,%i,%i,%i,%i,%i,%i,%i,%i,%i')
+                stat['50_percentile'] = percentile[2]
+                stat['95_percentile'] = percentile[7]
+                stat['99_percentile'] = percentile[9]
+            stats.append(stat)
 
-        report = {"stats":stats, "errors":[e.to_dict() for e in six.itervalues(self.errors)]}
+        '''
+        report = {"stats":stats, "errors":[e.to_dict() for e in six.itervalues(master.errors)]}
+
         if stats:
             report["total_rps"] = stats[len(stats)-1]["current_rps"]
-            report["fail_ratio"] = self.stats.aggregated_stats("Total").fail_ratio
+            report["fail_ratio"] = master.stats.aggregated_stats("Total").fail_ratio
 
             # since generating a total response times dict with all response times from all
             # urls is slow, we make a new total response time dict which will consist of one
@@ -428,13 +446,14 @@ class MasterLocustConsumerRunner(MasterLocustRunner):
             # calculate total median
             stats[len(stats)-1]["median_response_time"] = median_from_dict(stats[len(stats)-1]["num_requests"], response_times)
 
-        is_distributed = isinstance(self, MasterLocustRunner)
-        if is_distributed:
-            report["slave_count"] = self.slave_count
+        report["slave_count"] = master.slave_count
 
-        report["state"] = self.state
-        report["user_count"] = self.user_count
+        report["state"] = master.state
+        report["user_count"] = master.user_count
         return report
+        '''
+        return stats
+
 
 class SlaveLocustRunner(DistributedLocustRunner):
     def __init__(self, *args, **kwargs):
