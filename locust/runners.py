@@ -156,7 +156,7 @@ class LocustRunner(object):
             self.locusts.killone(g)
         events.hatch_complete.fire(user_count=self.num_clients)
 
-    def start_hatching(self, locust_count=None, hatch_rate=None, wait=False):
+    def start_hatching(self, locust_count=None, hatch_rate=None, run_id=None, wait=False):
         if self.state != STATE_RUNNING and self.state != STATE_HATCHING:
             self.stats.clear_all()
             self.stats.start_time = time()
@@ -211,7 +211,7 @@ class LocalLocustRunner(LocustRunner):
             self.log_exception("local", str(exception), formatted_tb)
         events.locust_error += on_locust_error
 
-    def start_hatching(self, locust_count=None, hatch_rate=None, wait=False):
+    def start_hatching(self, locust_count=None, hatch_rate=None, run_id=None, wait=False):
         self.hatching_greenlet = gevent.spawn(lambda: super(LocalLocustRunner, self).start_hatching(locust_count, hatch_rate, wait=wait))
         self.greenlet = self.hatching_greenlet
 
@@ -278,7 +278,7 @@ class MasterLocustRunner(DistributedLocustRunner):
     def user_count(self):
         return sum([c.user_count for c in six.itervalues(self.clients)])
 
-    def start_hatching(self, locust_count, hatch_rate):
+    def start_hatching(self, locust_count, hatch_rate, run_id=None):
         num_slaves = len(self.clients.ready) + len(self.clients.running)
         if not num_slaves:
             logger.warning("You are running in distributed mode but have no slave servers connected. "
@@ -289,7 +289,7 @@ class MasterLocustRunner(DistributedLocustRunner):
         slave_num_clients = locust_count // (num_slaves or 1)
         slave_hatch_rate = float(hatch_rate) / (num_slaves or 1)
         remaining = locust_count % num_slaves
-        self.run_id = str(uuid.uuid4())
+        self.run_id = run_id
 
         logger.info("Sending hatch jobs to %d ready clients", num_slaves)
 
@@ -315,7 +315,6 @@ class MasterLocustRunner(DistributedLocustRunner):
 
         self.stats.start_time = time()
         self.state = STATE_HATCHING
-        return self.run_id
 
     def stop(self):
         for client in self.clients.hatching + self.clients.running:
