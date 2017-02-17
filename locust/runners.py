@@ -253,6 +253,7 @@ class MasterLocustRunner(DistributedLocustRunner):
             def running(self):
                 return self.get_by_state(STATE_RUNNING)
 
+        self.run_id = None
         self.clients = SlaveNodesDict()
         self.server = rpc.Server(self.master_bind_host, self.master_bind_port)
         self.greenlet = Group()
