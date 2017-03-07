@@ -24,7 +24,8 @@ def _send_obj(sock, msg):
     packed = struct.pack('!i', len(data)) + data
     try:
         sock.sendall(packed)
-    except Exception:
+    except Exception as e:
+        logger.Error("Unable to send obj in RPC: " + e)
         try:
             sock.close()
         except:

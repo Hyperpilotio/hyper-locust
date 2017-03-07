@@ -464,15 +464,18 @@ def main():
         main_greenlet = gevent.spawn(web.start, locust_classes, options)
 
     if not options.master and not options.slave:
+        logger.info("Using local locust runner")
         runners.locust_runner = LocalLocustRunner(locust_classes, options)
         # spawn client spawning/hatching greenlet
         if options.no_web:
             runners.locust_runner.start_hatching(wait=True)
             main_greenlet = runners.locust_runner.greenlet
     elif options.master:
+        logger.info("Using master locust runner")
         runners.locust_runner = MasterLocustRunner(locust_classes, options)
     elif options.slave:
         try:
+            logger.info("Using slave locust runner")
             runners.locust_runner = SlaveLocustRunner(locust_classes, options)
             main_greenlet = runners.locust_runner.greenlet
         except socket.error as e:
