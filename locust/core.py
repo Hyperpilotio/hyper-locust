@@ -86,6 +86,8 @@ class Locust(object):
     task_set = None
     """TaskSet class that defines the execution behaviour of this locust"""
 
+    task_set_object = None
+
     stop_timeout = None
     """Number of seconds after which the Locust will die. If None it won't timeout."""
 
@@ -98,9 +100,17 @@ class Locust(object):
     def __init__(self):
         super(Locust, self).__init__()
 
+    def stop(self):
+        if not self.task_set_object:
+            logger.error("Unable to find task set object in locust")
+            return
+
+        self.task_set_object.stop_tasks()
+
     def run(self):
         try:
-            self.task_set(self).run()
+            self.task_set_object = self.task_set(self)
+            self.task_set_object.run()
         except StopLocust:
             pass
         except (RescheduleTask, RescheduleTaskImmediately) as e:
@@ -245,7 +255,7 @@ class TaskSet(object):
             self.max_wait = self.locust.max_wait
 
     def stop_tasks(self):
-        run_tasks = False
+        self.run_tasks = False
 
     def run(self, *args, **kwargs):
         self.run_tasks = True
