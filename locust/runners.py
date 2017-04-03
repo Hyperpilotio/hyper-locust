@@ -50,7 +50,7 @@ class LocustRunner(object):
         self.hatching_greenlet = None
         self.exceptions = {}
         self.stats = global_stats
-        self.taskset_objects = {}
+        self.locust_objects = {}
         self.gid_mapping = {}
 
         # register listener that resets stats when hatching is complete
@@ -114,7 +114,7 @@ class LocustRunner(object):
         logger.info("Hatching and swarming %i clients at the rate %g clients/s..." % (spawn_count, self.hatch_rate))
         occurence_count = dict([(l.__name__, 0) for l in self.locust_classes])
 
-        def hatch(taskset_objects, gid_mapping):
+        def hatch(locust_objects, gid_mapping):
             sleep_time = 1.0 / self.hatch_rate
             while True:
                 if not bucket:
@@ -127,19 +127,19 @@ class LocustRunner(object):
                 gid = str(uuid.uuid4())
                 def start_locust(_):
                     try:
-                        taskset_object = locust()
-                        taskset_objects[gid] = taskset_object
-                        taskset_object.run()
+                        locust_object = locust()
+                        locust_objects[gid] = locust_object
+                        locust_object.run()
                     except GreenletExit:
                         pass
-                new_greenlet = self.locusts.spawn(start_locust, taskset_object)
+                new_greenlet = self.locusts.spawn(start_locust, locust)
                 gid_mapping[id(new_greenlet)] = gid
 
                 if len(self.locusts) % 10 == 0:
                     logger.debug("%i locusts hatched" % len(self.locusts))
                 gevent.sleep(sleep_time)
 
-        hatch(self.taskset_objects, self.gid_mapping)
+        hatch(self.locust_objects, self.gid_mapping)
         if wait:
             self.locusts.join()
             logger.info("All locusts dead\n")
@@ -162,11 +162,11 @@ class LocustRunner(object):
         for g in dying:
             greenlet_id = id(g)
             if greenlet_id in self.gid_mapping:
-                gid = gid_mapping[greenlet_id]
-                taskset_object = self.taskset_objects[gid]
-                taskset_object.stop_tasks()
+                gid = self.gid_mapping[greenlet_id]
+                locust_object = self.locust_objects[gid]
+                locust_object.stop()
                 g.join()
-                del(self.taskset_objects[gid])
+                del(self.locust_objects[gid])
                 del(self.gid_mapping[greenlet_id])
             self.locusts.killone(g)
 
@@ -207,7 +207,7 @@ class LocustRunner(object):
         if self.hatching_greenlet and not self.hatching_greenlet.ready():
             self.hatching_greenlet.kill(block=True)
         self.locusts.kill(block=True)
-        self.taskset_objects.clear()
+        self.locust_objects.clear()
         self.gid_mapping.clear()
         self.state = STATE_STOPPED
         events.locust_stop_hatching.fire()
