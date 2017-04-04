@@ -510,6 +510,11 @@ class SlaveLocustRunner(DistributedLocustRunner):
         while True:
             msg = self.client.recv()
             if msg.type == "hatch":
+                if not self.hatching_greenlet.ready():
+                    logger.warning("Unable to run new hatch request as previous hatching is on going.")
+                    self.client.send(Message("already_hatching", None, self.client_id))
+                    return
+
                 self.client.send(Message("hatching", None, self.client_id))
                 job = msg.data
                 self.hatch_rate = job["hatch_rate"]

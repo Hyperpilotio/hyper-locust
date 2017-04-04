@@ -59,7 +59,8 @@ def swarm():
     locust_count = int(request.form["locust_count"])
     hatch_rate = float(request.form["hatch_rate"])
     stage_id = request.form["stage_id"]
-    runners.locust_runner.start_hatching(locust_count, hatch_rate, stage_id)
+    runner = runners.locust_runner
+    runner.start_hatching(locust_count, hatch_rate, stage_id)
     message = {'success':True, 'message': 'Swarming started'}
     response = make_response(json.dumps(message))
     response.headers["Content-type"] = "application/json"
