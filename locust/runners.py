@@ -159,15 +159,23 @@ class LocustRunner(object):
                     dying.append(g)
                     bucket.remove(l)
                     break
+        stopping = []
         for g in dying:
             greenlet_id = id(g)
             if greenlet_id in self.gid_mapping:
                 gid = self.gid_mapping[greenlet_id]
                 locust_object = self.locust_objects[gid]
                 locust_object.stop()
-                g.join()
-                del(self.locust_objects[gid])
-                del(self.gid_mapping[greenlet_id])
+                stopping.append(g)
+            else:
+                self.locusts.killone(g)
+
+        for g in stopping:
+            greenlet_id = id(g)
+            gid = self.gid_mapping[greenlet_id]
+            g.join()
+            del(self.locust_objects[gid])
+            del(self.gid_mapping[greenlet_id])
             self.locusts.killone(g)
 
         events.hatch_complete.fire(user_count=self.num_clients)
@@ -298,6 +306,10 @@ class MasterLocustRunner(DistributedLocustRunner):
         return sum([c.user_count for c in six.itervalues(self.clients)])
 
     def start_hatching(self, locust_count, hatch_rate, run_id=None):
+        if len(self.clients.hatching) > 0:
+            logger.warning("Clients are still hatching, ignoring hatch request")
+            return
+
         num_slaves = len(self.clients.ready) + len(self.clients.running)
         if not num_slaves:
             logger.warning("You are running in distributed mode but have no slave servers connected. "
@@ -510,7 +522,7 @@ class SlaveLocustRunner(DistributedLocustRunner):
         while True:
             msg = self.client.recv()
             if msg.type == "hatch":
-                if not self.hatching_greenlet.ready():
+                if self.hatching_greenlet and not self.hatching_greenlet.ready():
                     logger.warning("Unable to run new hatch request as previous hatching is on going.")
                     self.client.send(Message("already_hatching", None, self.client_id))
                     return
