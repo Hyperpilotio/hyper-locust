@@ -2,16 +2,6 @@
 
 Customized for Hyperpilot
 
-## Quick start
-
-docker run wen777/load-testing -h  hostname:port  -c 10 -r 100 -m metrics-host:port
-
-## Build
-
-docker build -t wen777:load-testing .
-
-[![Build Status](https://secure.travis-ci.org/locustio/locust.png)](http://travis-ci.org/locustio/locust)
-
 ## Links
 
 * Website: <a href="http://locust.io">locust.io</a>
