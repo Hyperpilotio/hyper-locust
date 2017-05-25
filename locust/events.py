@@ -109,6 +109,13 @@ master_start_hatching = EventHook()
 This event is especially usefull to detect when the 'start' button is clicked on the web ui.
 """
 
+"""
+*master_rehatching* is fired when locust is already running but issued a hatch again.
+
+This is useful to detect when a user wants to change load while locust is running.
+"""
+master_rehatching = EventHook()
+
 master_stop_hatching = EventHook()
 """
 *master_stop_hatching* is fired when terminate the hatching process on the master.

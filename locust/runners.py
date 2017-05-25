@@ -328,6 +328,8 @@ class MasterLocustRunner(DistributedLocustRunner):
             self.stats.clear_all()
             self.exceptions = {}
             events.master_start_hatching.fire()
+        elif self.state == STATE_RUNNING:
+            events.master_rehatching.fire()
 
         for client in six.itervalues(self.clients):
             data = {
@@ -406,6 +408,7 @@ class InfluxStatsWriter(object):
         except InfluxDBClientError:
             pass #Ignore
 
+        events.master_rehatching += self.commit
         events.master_stop_hatching += self.commit
         events.quitting += self.commit
 
