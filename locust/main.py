@@ -330,11 +330,20 @@ def _is_package(path):
         and os.path.exists(os.path.join(path, '__init__.py'))
     )
 
+def download_url(url):
+    local_path = url.split("/")[-1]
+    print("Downloading file " + url + " to " + local_path)
+    urllib.urlretrieve(url, local_path)
+    return local_path
 
 def find_locustfile(locustfile):
     """
     Attempt to locate a locustfile, either explicitly or by searching parent dirs.
     """
+
+    if locustfile.find("://") != -1:
+        locustfile = download_url(locustfile)
+
     # Obtain env value
     names = [locustfile]
     # Create .py version if necessary
