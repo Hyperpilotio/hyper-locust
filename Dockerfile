@@ -1,6 +1,6 @@
 FROM python:2.7
 
-RUN pip install influxdb
+RUN pip install influxdb urllib3 pymongo
 
 ADD . /locust
 WORKDIR /locust
