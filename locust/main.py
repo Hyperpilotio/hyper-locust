@@ -64,7 +64,8 @@ def parse_options():
 
     parser.add_option(
         '--consumer-database',
-        action='store_true',
+        action='store',
+        type="str",
         dest='consumer_database',
         default="influx",
         help="Set Locust to run in consumer mode and choose database type")
