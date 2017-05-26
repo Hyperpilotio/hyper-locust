@@ -9,6 +9,7 @@ import json
 import uuid
 from influxdb import InfluxDBClient
 from influxdb.client import InfluxDBClientError
+from pymongo import MongoClient
 from time import time, mktime
 from hashlib import md5
 from datetime import datetime
@@ -285,7 +286,12 @@ class MasterLocustRunner(DistributedLocustRunner):
         self.greenlet = Group()
         self.greenlet.spawn(self.client_listener).link_exception(callback=self.noop)
         if options.consumer:
-            self.consumer = InfluxStatsWriter(self, options)
+            if options.consumer_database == "influx":
+                self.consumer = InfluxStatsWriter(self, options)
+            elif options.consumer_database == "mongo":
+                self.consumer = MongoStatsWriter(self, options)
+            else:
+                logger.warning("Unrecognized consumer database: " + options.consumer_database)
 
         # listener that gathers info on how many locust users the slaves has spawned
         def on_slave_report(client_id, data):
@@ -395,6 +401,56 @@ class MasterLocustRunner(DistributedLocustRunner):
     @property
     def slave_count(self):
         return len(self.clients.ready) + len(self.clients.hatching) + len(self.clients.running)
+
+class MongoStatsWriter(object):
+    def __init__(self, master, options):
+        self.master = master
+        self.mongo_client = MongoClient("mongo://" + options.consumer_mongo_endpoint + "/")
+        self.mongo_db = options.consumer_mongo_db
+
+        events.master_rehatching += self.commit
+        events.master_stop_hatching += self.commit
+        events.quitting += self.commit
+
+    def mongo_payload(self, master):
+        all_stats = []
+        for s in master.request_stats:
+            stats = {
+                "num_requests": s.num_requests,
+                "num_failures": s.num_failures,
+                "avg_response_time": s.avg_response_time,
+                "min_response_time": s.min_response_time or 0,
+                "max_response_time": s.max_response_time,
+                "current_rps": s.current_rps,
+                "median_response_time": s.median_response_time,
+                "avg_content_length": s.avg_content_length,
+                "user_count": master.user_count,
+                'method': s.method,
+                'name': s.name
+            }
+            if s.num_requests:
+                stats["50_percentile"] = int(s.get_response_time_percentile(0.5))
+                stats["95_percentile"] = int(s.get_response_time_percentile(0.95))
+                stats["99_percentile"] = int(s.get_response_time_percentile(0.99))
+            all_stats.append(stats)
+        return {
+            'hostname': self.master.host,
+            'run_id': self.master.run_id,
+            'all_stats': all_stats
+        }
+
+    def commit(self):
+        if not self.master.run_id:
+            return
+
+        logger.info("Sending load results to mongo for run: " + self.master.run_id)
+        try:
+            db = self.mongo_client[self.mongo_db]
+            collection = db['results']
+            collection.insert_one(self.mongo_payload(self.master))
+        except Error as err:
+            logger.warning("Unable to write stats to mongo: " + err)
+
 
 class InfluxStatsWriter(object):
     def __init__(self, master, options):

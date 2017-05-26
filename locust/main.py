@@ -63,6 +63,13 @@ def parse_options():
     )
 
     parser.add_option(
+        '--consumer-database',
+        action='store_true',
+        dest='consumer_database',
+        default="influx",
+        help="Set Locust to run in consumer mode and choose database type")
+
+    parser.add_option(
         '--consumer-influx-endpoint',
         dest="consumer_influx_endpoint",
         action='store',
@@ -96,6 +103,24 @@ def parse_options():
         type="str",
         default='test',
         help="Database to store results with influx"
+    )
+
+    parser.add_option(
+        '--consumer-mongo-endpoint',
+        dest="consumer_mongo_endpoint",
+        action='store',
+        type="str",
+        default='mongo:27017',
+        help="Endpoint to connect to mongo"
+    )
+
+    parser.add_option(
+        '--consumer-mongo-db',
+        dest="consumer_mongo_db",
+        action='store',
+        type="str",
+        default='test',
+        help="Database to store results with mongo"
     )
 
     parser.add_option(
