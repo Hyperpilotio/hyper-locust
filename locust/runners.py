@@ -405,7 +405,7 @@ class MasterLocustRunner(DistributedLocustRunner):
 class MongoStatsWriter(object):
     def __init__(self, master, options):
         self.master = master
-        self.mongo_client = MongoClient("mongo://" + options.consumer_mongo_endpoint + "/")
+        self.mongo_client = MongoClient("mongodb://" + options.consumer_mongo_endpoint + "/")
         self.mongo_db = options.consumer_mongo_db
 
         events.master_rehatching += self.commit
@@ -448,7 +448,7 @@ class MongoStatsWriter(object):
             db = self.mongo_client[self.mongo_db]
             collection = db['results']
             collection.insert_one(self.mongo_payload(self.master))
-        except Error as err:
+        except Exception as err:
             logger.warning("Unable to write stats to mongo: " + err)
 
 
