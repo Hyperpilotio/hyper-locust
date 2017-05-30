@@ -322,6 +322,10 @@ class MasterLocustRunner(DistributedLocustRunner):
                            "Please connect slaves prior to swarming.")
             return
 
+        logger.info("Current state: " + str(self.state))
+        if self.state == STATE_RUNNING or self.state == STATE_STOPPED:
+            events.master_rehatching.fire()
+
         self.num_clients = locust_count
         slave_num_clients = locust_count // (num_slaves or 1)
         slave_hatch_rate = float(hatch_rate) / (num_slaves or 1)
@@ -334,8 +338,6 @@ class MasterLocustRunner(DistributedLocustRunner):
             self.stats.clear_all()
             self.exceptions = {}
             events.master_start_hatching.fire()
-        elif self.state == STATE_RUNNING:
-            events.master_rehatching.fire()
 
         for client in six.itervalues(self.clients):
             data = {
@@ -359,7 +361,6 @@ class MasterLocustRunner(DistributedLocustRunner):
         for client in self.clients.hatching + self.clients.running:
             self.server.send(Message("stop", None, None))
         events.master_stop_hatching.fire()
-        self.run_id = None
 
     def quit(self):
         for client in six.itervalues(self.clients):
@@ -412,9 +413,12 @@ class MongoStatsWriter(object):
         events.master_stop_hatching += self.commit
         events.quitting += self.commit
 
+    def _sort_stats(self, stats):
+        return [stats[key] for key in sorted(six.iterkeys(stats))]
+
     def mongo_payload(self, master):
         all_stats = []
-        for s in master.request_stats:
+        for s in self._sort_stats(master.request_stats):
             stats = {
                 "num_requests": s.num_requests,
                 "num_failures": s.num_failures,
@@ -443,11 +447,16 @@ class MongoStatsWriter(object):
         if not self.master.run_id:
             return
 
-        logger.info("Sending load results to mongo for run: " + self.master.run_id)
+        payload = self.mongo_payload(self.master)
+        if len(payload['all_stats']) == 0:
+            logger.info("Skip sending empty stats to mongo")
+            return
+
+        logger.info("Sending load results to mongo for run: " + self.master.run_id + ", payload: " + str(payload))
         try:
             db = self.mongo_client[self.mongo_db]
             collection = db['results']
-            collection.insert_one(self.mongo_payload(self.master))
+            collection.insert_one(payload)
         except Exception as err:
             logger.warning("Unable to write stats to mongo: " + err)
 
