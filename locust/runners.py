@@ -322,7 +322,6 @@ class MasterLocustRunner(DistributedLocustRunner):
                            "Please connect slaves prior to swarming.")
             return
 
-        logger.info("Current state: " + str(self.state))
         if self.state == STATE_RUNNING or self.state == STATE_STOPPED:
             events.master_rehatching.fire()
 
